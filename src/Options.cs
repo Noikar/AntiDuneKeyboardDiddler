@@ -23,6 +23,11 @@ namespace AntiDuneKeyboardDiddler
         // requests that undo that are asynchronous, so the desktop needs a moment to settle.
         public int SettleMilliseconds = 2000;
 
+        // How often, while the game runs, to check that the rest of the desktop is still on
+        // the preferred layout and put back anything that has drifted. Cheap when nothing is
+        // wrong: it reads each window's layout and posts nothing unless one is off.
+        public int HoldSweepMilliseconds = 500;
+
         public bool EnforceAlways = false;
         public bool Verbose = false;
 
@@ -85,6 +90,10 @@ namespace AntiDuneKeyboardDiddler
 
                     case "settlemilliseconds":
                         int.TryParse(value, out options.SettleMilliseconds);
+                        break;
+
+                    case "holdsweepmilliseconds":
+                        int.TryParse(value, out options.HoldSweepMilliseconds);
                         break;
 
                     case "enforcealways":

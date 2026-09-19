@@ -24,6 +24,8 @@ namespace AntiDuneKeyboardDiddler
         private readonly Dictionary<uint, bool> lastUnloadResult = new Dictionary<uint, bool>();
         private DateTime lastDefaultLanguageReset = DateTime.MinValue;
         private DateTime settleDeadline = DateTime.MinValue;
+        private DateTime lastHoldSweep = DateTime.MinValue;
+        private DateTime lastHoldLog = DateTime.MinValue;
 
         private HashSet<uint> gameProcessIds = new HashSet<uint>();
         private List<Process> tracked = new List<Process>();
@@ -173,6 +175,36 @@ namespace AntiDuneKeyboardDiddler
             return threadId == 0 ? 0 : ToHkl(NativeMethods.GetKeyboardLayout(threadId));
         }
 
+        /// <summary>
+        /// The foreground layout, but only when the foreground window belongs to the user
+        /// rather than to the game. Returns 0 while the game is in front.
+        ///
+        /// This distinction matters: the game starts on the system default input language,
+        /// and after its layout is unloaded it falls back to that default too. Reading the
+        /// preferred layout off a game window therefore silently redefines "what the user was
+        /// on" as "whatever their Windows default is" - which is exactly how a session that
+        /// was corrected back to US-International still ended up on Swedish.
+        /// </summary>
+        private uint GetUserForegroundLayout()
+        {
+            IntPtr hWnd = NativeMethods.GetForegroundWindow();
+
+            if (hWnd == IntPtr.Zero)
+            {
+                return 0;
+            }
+
+            uint processId;
+            uint threadId = NativeMethods.GetWindowThreadProcessId(hWnd, out processId);
+
+            if (threadId == 0 || gameProcessIds.Contains(processId))
+            {
+                return 0;
+            }
+
+            return ToHkl(NativeMethods.GetKeyboardLayout(threadId));
+        }
+
         // --- process tracking ----------------------------------------------------
 
         private List<Process> FindGameProcesses()
@@ -234,6 +266,8 @@ namespace AntiDuneKeyboardDiddler
             lastUnloadResult.Clear();
             lastDefaultLanguageReset = DateTime.MinValue;
             settleDeadline = DateTime.MinValue;
+            lastHoldSweep = DateTime.MinValue;
+            lastHoldLog = DateTime.MinValue;
         }
 
         // --- enforcement ---------------------------------------------------------
@@ -328,6 +362,36 @@ namespace AntiDuneKeyboardDiddler
             return removedAny;
         }
 
+        /// <summary>
+        /// Puts any non-game window that has drifted off the preferred layout back onto it.
+        /// Rate-limited, because it enumerates every window on the desktop; it posts nothing
+        /// at all when everything is already correct, which is the normal case.
+        /// </summary>
+        private int HoldPreferred(bool force)
+        {
+            if (!force
+                && (DateTime.UtcNow - lastHoldSweep).TotalMilliseconds < options.HoldSweepMilliseconds)
+            {
+                return 0;
+            }
+
+            lastHoldSweep = DateTime.UtcNow;
+
+            int corrected = RestoreWindows(hkl => hkl != preferredHkl);
+
+            // Throttled: a long session that keeps drifting should leave a trace without
+            // filling the log with one line every half second.
+            if (corrected > 0
+                && (options.Verbose || (DateTime.UtcNow - lastHoldLog).TotalSeconds >= 10))
+            {
+                lastHoldLog = DateTime.UtcNow;
+
+                Log.Write("held " + corrected + " window(s) on " + Describe(preferredHkl, expected));
+            }
+
+            return corrected;
+        }
+
         private void RestorePreload()
         {
             SortedDictionary<string, string> current = LayoutRegistry.ReadPreload();
@@ -375,15 +439,21 @@ namespace AntiDuneKeyboardDiddler
                     return true;
                 }
 
-                // Nothing is wrong, so follow whatever the user has chosen for themselves.
-                uint foreground = GetForegroundLayout();
+                // Nothing is wrong, so follow whatever the user has chosen for themselves -
+                // but never read that choice off a game window, for the reason given on
+                // GetUserForegroundLayout.
+                uint foreground = GetUserForegroundLayout();
 
                 if (foreground != 0 && expected.ContainsKey(foreground))
                 {
                     preferredHkl = foreground;
                 }
 
-                return false;
+                // Reacting only to intruders is not enough. The eviction pushes threads onto
+                // the system default, windows opened afterwards start on it, and the desktop
+                // drifts there over a long session while nothing is technically wrong. So
+                // while the game runs, hold the rest of the desktop on the preferred layout.
+                return IsArmed && HoldPreferred(false) > 0;
             }
 
             var intruderSet = new HashSet<uint>(intruders);
@@ -452,7 +522,10 @@ namespace AntiDuneKeyboardDiddler
             expected = LayoutRegistry.GetExpectedLayouts();
             preloadSnapshot = LayoutRegistry.ReadPreload();
 
-            uint foreground = GetForegroundLayout();
+            // At arm time the game is usually already in front, in which case this returns 0
+            // and the value tracked from before it launched is kept - which is the one the
+            // user was actually typing in.
+            uint foreground = GetUserForegroundLayout();
 
             if (foreground != 0 && expected.ContainsKey(foreground))
             {
@@ -553,7 +626,8 @@ namespace AntiDuneKeyboardDiddler
 
                 Log.Write("ARMED - "
                     + string.Join(", ", tracked.Select(p => p.ProcessName + " (pid " + p.Id + ")").ToArray())
-                    + " is running. Holding " + Describe(preferredHkl, expected));
+                    + " is running. Holding " + Describe(preferredHkl, expected)
+                    + " (system default is " + Describe(GetDefaultInputLanguage(), expected) + ")");
 
                 RaiseStateChanged();
             }
@@ -566,7 +640,13 @@ namespace AntiDuneKeyboardDiddler
                 Log.Write("Game exited - final cleanup.");
                 ResetCorrectionState();
                 Enforce();
-                Log.Write("DISARMED - idle.");
+
+                // Unconditional, not rate-limited: this is the moment the user comes back to
+                // the desktop, so whatever the session drifted onto during the game gets put
+                // right before they touch a keyboard.
+                HoldPreferred(true);
+
+                Log.Write("DISARMED - idle. Holding " + Describe(preferredHkl, expected));
 
                 RaiseStateChanged();
             }

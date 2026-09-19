@@ -22,6 +22,20 @@ whichever layout happens to be their default rather than the one they were typin
 unload therefore comes first, and the restore is repeated for `SettleMilliseconds`
 afterwards because the requests that carry it are asynchronous.
 
+Reacting to intruders is not sufficient on its own, either. That same system default is
+what newly opened windows start on, so across a long session the desktop drifts onto it
+while nothing is technically wrong — no intruder is loaded, and a purely reactive guard
+sits idle while the user ends up on the wrong layout anyway. Hence two additions:
+
+* every `HoldSweepMilliseconds`, any non-game window that has drifted off the preferred
+  layout is put back
+* when the game exits, that sweep runs once unconditionally, since that is the moment the
+  user returns to the desktop
+
+The preferred layout is also never read from a game window. The game starts on the system
+default and falls back to it after its layout is unloaded, so treating that as a user
+choice silently redefines "what they were on" as "whatever their default is".
+
 ### What it does not do
 
 No injection, no memory access, no messages posted to game windows, no driver, nothing that
@@ -81,6 +95,7 @@ Windows settings *while the game is running* would be seen as an intruder and ev
 | `ArmedPollMilliseconds` | `150` | How often to check the layout while the game runs |
 | `UnloadRetryMilliseconds` | `3000` | Cooldown on removal attempts and on resetting the default language |
 | `SettleMilliseconds` | `2000` | How long to keep restoring the layout after an eviction |
+| `HoldSweepMilliseconds` | `500` | How often to pull drifted windows back while the game runs |
 | `EnforceAlways` | `false` | Guard all the time, not just during the game |
 | `Notify` | `true` | Show a tray balloon when the layout is put back |
 | `Verbose` | `false` | Log every correction |
