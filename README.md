@@ -41,42 +41,67 @@ objects to layouts that appear out of nowhere.
 
 ## Install
 
+Download it from the [latest release](../../releases/latest). No scripts, no build, no
+installer.
+
+1. Grab `AntiDuneKeyboardDiddler-<version>-win.zip`.
+2. **Before extracting**, right-click the zip → **Properties** → tick **Unblock** → **OK**.
+   That saves you the security warning described in the next section.
+3. Extract it anywhere you like and run `AntiDuneKeyboardDiddler.exe`.
+4. Right-click the tray icon and tick **Start with Windows**.
+
+A keyboard icon appears in the notification area next to the clock — grey when idle, green
+while it is guarding a running game. There is no console window and no main window; the
+tray icon is the whole interface.
+
+Windows 10/11 only. Nothing else to install: it uses the .NET Framework that is already
+part of Windows.
+
+### Or build it from source
+
+Slightly more work, but it needs no SDK, and a locally built executable gets no security
+warning at all:
+
 ```powershell
+git clone https://github.com/Noikar/AntiDuneKeyboardDiddler
+cd AntiDuneKeyboardDiddler
 pwsh -NoProfile -File .\build.ps1
 pwsh -NoProfile -File .\install.ps1
 ```
 
-`install.ps1` copies the executable to `app\`, registers it to start with Windows, and
-runs it. A keyboard icon appears in the notification area next to the clock — grey when
-idle, green while it is guarding a running game. There is no console window and no main
-window; the tray icon is the whole interface.
+`install.ps1` is a convenience for working from source: it copies the built executable to
+`app\`, registers it to start with Windows, and runs it. Autostart points at `app\` rather
+than `build\` on purpose, so that rebuilding never has to fight a running copy for the
+file. Re-run it after a rebuild to update the installed copy.
 
-Autostart points at `app\` rather than `build\` on purpose, so that rebuilding never has
-to fight a running copy for the file.
+If you would rather not use the script, the built `build\AntiDuneKeyboardDiddler.exe` is
+self-contained — put it wherever you like and use the tray menu for startup, exactly as
+with the downloaded version.
 
-To undo: `pwsh -NoProfile -File .\install.ps1 -Uninstall`, or untick **Start with Windows**
-in the tray menu. Everything is per-user — no administrator rights, no service, no
-scheduled task, just a value under `HKCU\...\CurrentVersion\Run`.
+### Uninstalling
+
+Untick **Start with Windows** in the tray menu, then **Exit**, then delete the folder. Or
+`pwsh -NoProfile -File .\install.ps1 -Uninstall` if you used the script. Everything is
+per-user — no administrator rights, no service, no scheduled task, just a value under
+`HKCU\...\CurrentVersion\Run` and the files where you put them.
 
 ## Windows will warn you about this
 
-Downloading the release and running it gets you a blue **"Windows protected your PC"**
-box. Click **More info → Run anyway**.
+If you skipped the unblock step above, running the downloaded executable gets you a blue
+**"Windows protected your PC"** box. Click **More info → Run anyway**.
 
 That warning does not mean anything was found. It is SmartScreen saying it does not
 recognize the file, because the executable is not signed with a code signing certificate —
 those cost money and have to be renewed yearly, which is a lot to ask of a free utility
 this small. SmartScreen builds trust in an unsigned file from download volume alone, and
-since that trust is tied to the exact file, every new release starts from zero again.
+since that trust is tied to the exact file, every new release starts from zero again, so
+it will not fade away on its own.
 
-The cleanest way to avoid it entirely is to **unblock the zip before extracting**:
-
-> Right-click the downloaded `.zip` → **Properties** → tick **Unblock** → **OK**, and
-> *then* extract it.
-
-Windows tags downloaded files with a marker that spreads to anything extracted out of
-them, so clearing it on the zip clears it for the executable inside. Doing it afterwards
-means unblocking the `.exe` separately.
+Unblocking works because Windows tags downloaded files with a marker that spreads to
+anything extracted out of them. Clearing it on the zip clears it for the executable
+inside; doing it afterwards means unblocking the `.exe` separately. Building from source
+sidesteps it entirely, since locally compiled files were never downloaded and so never get
+tagged.
 
 ### If you would rather check before you run it
 
