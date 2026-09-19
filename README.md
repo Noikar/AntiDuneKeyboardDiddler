@@ -58,6 +58,65 @@ To undo: `pwsh -NoProfile -File .\install.ps1 -Uninstall`, or untick **Start wit
 in the tray menu. Everything is per-user — no administrator rights, no service, no
 scheduled task, just a value under `HKCU\...\CurrentVersion\Run`.
 
+## Windows will warn you about this
+
+Downloading the release and running it gets you a blue **"Windows protected your PC"**
+box. Click **More info → Run anyway**.
+
+That warning does not mean anything was found. It is SmartScreen saying it does not
+recognize the file, because the executable is not signed with a code signing certificate —
+those cost money and have to be renewed yearly, which is a lot to ask of a free utility
+this small. SmartScreen builds trust in an unsigned file from download volume alone, and
+since that trust is tied to the exact file, every new release starts from zero again.
+
+The cleanest way to avoid it entirely is to **unblock the zip before extracting**:
+
+> Right-click the downloaded `.zip` → **Properties** → tick **Unblock** → **OK**, and
+> *then* extract it.
+
+Windows tags downloaded files with a marker that spreads to anything extracted out of
+them, so clearing it on the zip clears it for the executable inside. Doing it afterwards
+means unblocking the `.exe` separately.
+
+### If you would rather check before you run it
+
+Entirely reasonable for a utility that touches your keyboard settings. Any of these work,
+in increasing order of how much they actually tell you:
+
+**Check the hash.** Every release lists the SHA-256 of what was uploaded. Compare:
+
+```powershell
+Get-FileHash .\AntiDuneKeyboardDiddler.exe -Algorithm SHA256
+```
+
+Matching means you have the exact bytes from the release page and nothing altered them in
+transit. It does not say anything about whether those bytes are trustworthy.
+
+**Scan it.** Upload the `.exe` to [VirusTotal](https://www.virustotal.com), which runs it
+past around seventy engines at once. Fair warning: **a detection or two would not be
+surprising**, and would not mean much. This tool legitimately does several things that
+heuristic scanners treat as suspicious in combination — it enumerates every window on the
+desktop, posts messages to windows belonging to other processes, writes a startup entry to
+the registry, and changes keyboard layout state. A tiny unsigned executable doing all that
+is exactly the shape of thing generic heuristics flag. Look at *which* engines complain and
+what they call it; a couple of "Trojan.Generic" style hits from the less selective engines
+mean something very different from a specific, named identification agreed on by the major
+ones.
+
+**Ask an AI to read it.** The entire program is about 1,800 lines of commented C# across
+nine files in [`src/`](src/), with no dependencies beyond Windows itself. Point Claude,
+ChatGPT, Copilot or whatever you use at this repository and ask it what the code actually
+does, whether anything sends data anywhere, or whether anything touches the game. It is
+small enough to be read in full in one go, which is not true of most software you install.
+Worth asking specifically: *does this make any network connections?* (It does not — there
+is no networking code anywhere in it, and nothing to configure.)
+
+**Build it yourself.** The strongest option, and it takes one command. You end up running
+bytes you compiled from source you can read, and Windows does not warn about locally built
+files at all, because they were never downloaded. See [Building](#building) — it needs no
+SDK, no NuGet, and no project file, just the compiler already sitting in your Windows
+install.
+
 ## The tray menu
 
 Right-click the icon:
