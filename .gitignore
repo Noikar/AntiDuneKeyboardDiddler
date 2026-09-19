@@ -1,0 +1,24 @@
+# Compiler output
+build/
+
+# Copy created by install.ps1, and the one autostart points at
+app/
+
+# Runtime logs from the guard and from the diagnostic monitor
+*.log
+*.log.old
+
+# Release staging
+dist/
+
+# Editors and tooling
+.vs/
+.vscode/
+*.user
+*.suo
+bin/
+obj/
+
+# Windows
+Thumbs.db
+desktop.ini
