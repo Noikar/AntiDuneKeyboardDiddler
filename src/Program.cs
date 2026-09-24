@@ -156,7 +156,8 @@ namespace AntiDuneKeyboardDiddler
         private static void ShowUsage()
         {
             ShowMessage(
-                "AntiDuneKeyboardDiddler - keeps a game from hijacking your keyboard layout."
+                "AntiDuneKeyboardDiddler " + UpdateCheck.Current
+                + " - keeps a game from hijacking your keyboard layout."
                 + Environment.NewLine + Environment.NewLine
                 + "  (no arguments)     Sit in the notification area and guard while the game runs."
                 + Environment.NewLine

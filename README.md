@@ -7,7 +7,7 @@ it. If you use English International, English UK, Swedish or anything else, your
 desktop ends up on a layout you never asked for, and the unwanted one sticks around in your
 language switcher afterwards.
 
-This is a 35 KB tray utility that puts it back. It watches for the game, removes whatever
+This is a 46 KB tray utility that puts it back. It watches for the game, removes whatever
 layout gets added, and returns you to the one you were actually typing in.
 
 It does not touch the game in any way — no injection, no memory access, nothing sent to the
@@ -38,8 +38,10 @@ Right-click it for:
 | **Open log** | What it has done, in plain text |
 | **Show status...** | Your layouts vs. what is currently loaded |
 | **Remove stray layouts now** | Clean up after a session that ran without it |
+| **Preferred layout** | Pin the layout to hold, instead of letting it work that out for itself |
 | **Guard even when the game is not running** | If something other than Dune does this to you |
 | **Start with Windows** | Launch automatically at sign-in |
+| **Check for updates...** | Ask GitHub whether there is a newer release |
 | **Exit** | Stop it |
 
 When it puts your layout back you get a brief notification, so it never happens silently.
@@ -47,6 +49,12 @@ When it puts your layout back you get a brief notification, so it never happens 
 You can keep switching between your own layouts freely while it runs. It only removes
 layouts that turn up on their own, and it learns which ones are yours from your Windows
 settings — it never assumes a particular layout is the bad one.
+
+**Ever find yourself back on a layout you never use?** By default it works out which layout
+is yours by looking at the window in front, and Windows muddies that: new windows open on
+your default input language whether you want them or not. If one of your configured layouts
+is one you never actually type in, pick the right one under **Preferred layout** in the tray
+menu and it will hold that one and nothing else.
 
 **Playing something else that does this?** Open `AntiDuneKeyboardDiddler.ini` next to the
 exe and put that game's process name in `WatchProcesses`.
@@ -75,11 +83,14 @@ one actually tells you:
   startup entry, and changes keyboard settings, which is the shape of thing generic scanners
   flag. Check *which* engines complain: a couple of "Trojan.Generic" hits from minor engines
   is very different from a specific, named result the major ones agree on.
-- **Have an AI read it.** The whole program is about 1,800 lines of commented C# in
+- **Have an AI read it.** The whole program is about 2,100 lines of commented C# in
   [`src/`](src/). Point Claude, ChatGPT or Copilot at this repository and ask what it does,
   whether it sends anything anywhere, or whether it touches the game. Small enough to read
-  end to end in one go, which is not true of most things you install. It makes no network
-  connections at all — there is no networking code in it.
+  end to end in one go, which is not true of most things you install. It makes exactly one
+  kind of network connection, and only to ask GitHub for the version number of the latest
+  release — see [`src/UpdateCheck.cs`](src/UpdateCheck.cs), which is the only file in the
+  program that touches the network. It downloads and installs nothing, sends nothing about
+  you, and `CheckForUpdates = false` in the settings file turns even that off.
 - **Build it yourself.** The strongest option and one command, needing no developer tools.
   You run bytes you compiled from source you can read, and Windows raises no warning about
   locally built files. See [TECHNICAL.md](TECHNICAL.md#building).

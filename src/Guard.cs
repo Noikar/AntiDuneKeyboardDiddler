@@ -20,6 +20,12 @@ namespace AntiDuneKeyboardDiddler
         private SortedDictionary<string, string> preloadSnapshot = new SortedDictionary<string, string>();
         private uint preferredHkl;
 
+        // The layout the user has nailed down, or 0 when they have left the guard to work it
+        // out from the foreground window. Pinning exists because that detection cannot tell a
+        // deliberate choice from one Windows made on the user's behalf; see Enforce.
+        private uint pinnedHkl;
+        private string warnedPreferred;
+
         private readonly Dictionary<uint, DateTime> lastUnloadAttempt = new Dictionary<uint, DateTime>();
         private readonly Dictionary<uint, bool> lastUnloadResult = new Dictionary<uint, bool>();
         private DateTime lastDefaultLanguageReset = DateTime.MinValue;
@@ -442,11 +448,22 @@ namespace AntiDuneKeyboardDiddler
                 // Nothing is wrong, so follow whatever the user has chosen for themselves -
                 // but never read that choice off a game window, for the reason given on
                 // GetUserForegroundLayout.
-                uint foreground = GetUserForegroundLayout();
-
-                if (foreground != 0 && expected.ContainsKey(foreground))
+                //
+                // This is a guess, and on a machine whose default input language is a layout
+                // the user never types in it is a bad one. Windows opens every new window on
+                // that default and drops every thread orphaned by an unload onto it, so a
+                // window sitting on it is far more likely to be Windows' doing than a choice.
+                // Reading it as a choice promotes it to the preferred layout, and the hold
+                // sweep below then spreads it across the whole desktop. PreferredLayout exists
+                // to take the guess out entirely.
+                if (pinnedHkl == 0)
                 {
-                    preferredHkl = foreground;
+                    uint foreground = GetUserForegroundLayout();
+
+                    if (foreground != 0 && expected.ContainsKey(foreground))
+                    {
+                        preferredHkl = foreground;
+                    }
                 }
 
                 // Reacting only to intruders is not enough. The eviction pushes threads onto
@@ -522,6 +539,27 @@ namespace AntiDuneKeyboardDiddler
             expected = LayoutRegistry.GetExpectedLayouts();
             preloadSnapshot = LayoutRegistry.ReadPreload();
 
+            pinnedHkl = LayoutRegistry.ResolvePreferred(options.PreferredLayout, expected);
+
+            if (pinnedHkl != 0)
+            {
+                preferredHkl = pinnedHkl;
+                warnedPreferred = null;
+
+                return;
+            }
+
+            // Set but unrecognized: say so once rather than silently behaving as if it were
+            // blank, since the whole point of setting it is not to be guessed at.
+            if (!string.IsNullOrEmpty(options.PreferredLayout)
+                && !string.Equals(warnedPreferred, options.PreferredLayout, StringComparison.Ordinal))
+            {
+                warnedPreferred = options.PreferredLayout;
+
+                Log.Write("PreferredLayout \"" + options.PreferredLayout
+                    + "\" matches none of your configured layouts - falling back to detection.");
+            }
+
             // At arm time the game is usually already in front, in which case this returns 0
             // and the value tracked from before it launched is kept - which is the one the
             // user was actually typing in.
@@ -576,9 +614,59 @@ namespace AntiDuneKeyboardDiddler
 
             Log.Write("Guarding. Your layouts: "
                 + string.Join(", ", expected.Select(entry => Describe(entry.Key, expected)).ToArray()));
+            Log.Write(pinnedHkl != 0
+                ? "Pinned to " + Describe(pinnedHkl, expected)
+                : "No PreferredLayout set - following the foreground window. Currently "
+                    + Describe(preferredHkl, expected));
             Log.Write("Watching for processes matching: " + string.Join(", ", options.WatchProcesses.ToArray()));
 
             return true;
+        }
+
+        /// <summary>
+        /// Re-reads the configured layouts and hands them back, for menus built on demand.
+        /// </summary>
+        public Dictionary<uint, string> RefreshLayouts()
+        {
+            expected = LayoutRegistry.GetExpectedLayouts();
+
+            return expected;
+        }
+
+        /// <summary>The layout currently being held.</summary>
+        public uint PreferredLayout
+        {
+            get { return preferredHkl; }
+        }
+
+        /// <summary>The pinned layout, or 0 while the guard is following the foreground.</summary>
+        public uint PinnedLayout
+        {
+            get { return pinnedHkl; }
+        }
+
+        /// <summary>
+        /// Pins the layout to hold from now on; 0 goes back to following the foreground window.
+        /// The desktop is pulled onto it immediately, because the user has just said in as many
+        /// words which layout they want and should not have to wait for a sweep to agree.
+        /// </summary>
+        public void Pin(uint hkl)
+        {
+            pinnedHkl = expected.ContainsKey(hkl) ? hkl : 0;
+            warnedPreferred = null;
+
+            if (pinnedHkl == 0)
+            {
+                Log.Write("preferred layout unpinned - following the foreground window again");
+
+                return;
+            }
+
+            preferredHkl = pinnedHkl;
+
+            Log.Write("preferred layout pinned to " + Describe(preferredHkl, expected));
+
+            HoldPreferred(true);
         }
 
         /// <summary>One step of the watch loop.</summary>
@@ -722,10 +810,21 @@ namespace AntiDuneKeyboardDiddler
 
         public string BuildStatusText()
         {
-            expected = LayoutRegistry.GetExpectedLayouts();
+            RefreshLayouts();
+
+            // --status runs in a process of its own, which has never armed and so has never
+            // resolved the setting; do it here so the text reflects the file rather than 0.
+            pinnedHkl = LayoutRegistry.ResolvePreferred(options.PreferredLayout, expected);
+
+            if (pinnedHkl != 0)
+            {
+                preferredHkl = pinnedHkl;
+            }
 
             var text = new StringBuilder();
 
+            text.AppendLine("AntiDuneKeyboardDiddler " + UpdateCheck.Current);
+            text.AppendLine();
             text.AppendLine("Configured layouts (from HKCU\\Keyboard Layout):");
 
             foreach (var entry in expected)
@@ -742,6 +841,10 @@ namespace AntiDuneKeyboardDiddler
             }
 
             text.AppendLine();
+            text.AppendLine("Holding:                  " + (preferredHkl == 0
+                ? "(nothing yet)"
+                : Describe(preferredHkl, expected))
+                + (pinnedHkl != 0 ? "  [pinned]" : "  [detected from the foreground window]"));
             text.AppendLine("Foreground window layout: " + Describe(GetForegroundLayout(), expected));
             text.AppendLine("Default input language:   " + Describe(GetDefaultInputLanguage(), expected));
             text.AppendLine("Preload:                  " + Format(LayoutRegistry.ReadPreload()));

@@ -130,6 +130,91 @@ namespace AntiDuneKeyboardDiddler
         }
 
         /// <summary>
+        /// Turns a PreferredLayout setting into one of the user's configured HKLs, or 0 when it
+        /// names nothing recognizable. Three spellings are accepted, because three different
+        /// places show the user three different things:
+        ///
+        ///   F0010409                    the HKL, as the log and the status window print it
+        ///   00000409                    the KLID, as it appears in the registry
+        ///   United States-International the layout name, as Windows shows it
+        ///
+        /// The KLID form works because the low word of an HKL is the language id of the Preload
+        /// entry and survives substitution - see <see cref="KlidToHkl"/>. It is only honored
+        /// when exactly one configured layout has that language id; two layouts for the same
+        /// language (US and Dvorak, say) make the setting ambiguous, and holding the wrong one
+        /// all session is worse than falling back to detection.
+        /// </summary>
+        public static uint ResolvePreferred(string setting, Dictionary<uint, string> expected)
+        {
+            if (string.IsNullOrEmpty(setting) || expected == null)
+            {
+                return 0;
+            }
+
+            string text = setting.Trim();
+
+            if (text.Length == 0)
+            {
+                return 0;
+            }
+
+            if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            {
+                text = text.Substring(2);
+            }
+
+            uint value;
+
+            if (uint.TryParse(text, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value))
+            {
+                if (expected.ContainsKey(value))
+                {
+                    return value;
+                }
+
+                var sameLanguage = new List<uint>();
+
+                foreach (uint hkl in expected.Keys)
+                {
+                    if ((hkl & 0xFFFF) == (value & 0xFFFF))
+                    {
+                        sameLanguage.Add(hkl);
+                    }
+                }
+
+                if (sameLanguage.Count == 1)
+                {
+                    return sameLanguage[0];
+                }
+            }
+
+            // Names second, and exact before partial, so that "Swedish" cannot be swallowed by
+            // a longer layout that merely contains it.
+            foreach (var entry in expected)
+            {
+                if (string.Equals(entry.Value, text, StringComparison.OrdinalIgnoreCase))
+                {
+                    return entry.Key;
+                }
+            }
+
+            uint partial = 0;
+            int matches = 0;
+
+            foreach (var entry in expected)
+            {
+                if (entry.Value != null
+                    && entry.Value.IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    partial = entry.Key;
+                    matches++;
+                }
+            }
+
+            return matches == 1 ? partial : 0;
+        }
+
+        /// <summary>
         /// The set of HKLs the user has deliberately configured. Anything else that turns up
         /// loaded was added by something other than the user.
         /// </summary>

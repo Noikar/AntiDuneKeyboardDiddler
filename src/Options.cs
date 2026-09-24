@@ -28,6 +28,19 @@ namespace AntiDuneKeyboardDiddler
         // wrong: it reads each window's layout and posts nothing unless one is off.
         public int HoldSweepMilliseconds = 500;
 
+        // The layout to hold, pinned rather than detected. Accepts the input locale identifier
+        // as the log and status window print it ("F0010409"), the KLID Windows uses in the
+        // registry ("00000409"), or the layout's name ("United States-International").
+        //
+        // Empty means work it out from the foreground window, which is only as good as what
+        // Windows happens to have put there - see the comment on Guard.Enforce.
+        public string PreferredLayout = string.Empty;
+
+        // Ask GitHub once at startup whether there is a newer release, and say so with a tray
+        // balloon if there is. Nothing is ever downloaded or installed; the menu item checks on
+        // demand whether this is on or off.
+        public bool CheckForUpdates = true;
+
         public bool EnforceAlways = false;
         public bool Verbose = false;
 
@@ -96,6 +109,14 @@ namespace AntiDuneKeyboardDiddler
                         int.TryParse(value, out options.HoldSweepMilliseconds);
                         break;
 
+                    case "preferredlayout":
+                        options.PreferredLayout = value;
+                        break;
+
+                    case "checkforupdates":
+                        options.CheckForUpdates = IsTrue(value);
+                        break;
+
                     case "enforcealways":
                         options.EnforceAlways = IsTrue(value);
                         break;
@@ -119,6 +140,12 @@ namespace AntiDuneKeyboardDiddler
         /// exists are simply not persisted; the defaults still apply.
         /// </summary>
         public void Save(string key, bool value)
+        {
+            Save(key, value ? "true" : "false");
+        }
+
+        /// <summary>See the bool overload; this is the one that does the work.</summary>
+        public void Save(string key, string value)
         {
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
             {
@@ -148,14 +175,14 @@ namespace AntiDuneKeyboardDiddler
 
                     if (trimmed.Substring(0, separator).Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
                     {
-                        lines[index] = key + " = " + (value ? "true" : "false");
+                        lines[index] = key + " = " + value;
                         replaced = true;
                         break;
                     }
                 }
 
                 File.WriteAllLines(path, replaced ? lines : lines.Concat(
-                    new[] { key + " = " + (value ? "true" : "false") }).ToArray());
+                    new[] { key + " = " + value }).ToArray());
             }
             catch (IOException)
             {

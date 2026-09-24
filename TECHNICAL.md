@@ -36,6 +36,43 @@ The preferred layout is also never read from a game window. The game starts on t
 default and falls back to it after its layout is unloaded, so treating that as a user
 choice silently redefines "what they were on" as "whatever their default is".
 
+### Knowing which layout is the user's
+
+By default the guard infers this from whichever non-game window is in front. That is a
+guess, and on some machines it is a bad one. The system default input language is handed
+out constantly — every newly created window opens on it, and every thread orphaned by an
+unload falls back to it — so a window sitting on it is far more likely to be Windows' doing
+than a deliberate choice. If the default is a layout the user never actually types in, the
+inference eventually samples one of those windows, promotes that layout to the preferred
+one, and the hold sweep then spreads it across the desktop. Observed in the wild as a burst
+of `held 6 window(s) on 041D0809 (Swedish)` in the middle of an otherwise clean session,
+on a machine whose Preload slot 1 was Swedish and whose user only ever used US-International.
+
+`PreferredLayout` removes the inference. Set it and the guard holds exactly that layout for
+as long as it runs, and never reinterprets anything it sees as a change of mind. The tray
+menu writes it; it accepts the HKL (`F0010409`), the KLID (`00000409`) or the layout name.
+
+The KLID spelling works because the low word of an HKL is the language id of the Preload
+entry and survives substitution. It is honored only when exactly one configured layout has
+that language id — two layouts for the same language make it ambiguous, and holding the
+wrong one for a whole session is worse than falling back to inference.
+
+### The update check
+
+`UpdateCheck.cs` is the only file in the program that opens a socket. It GETs
+`api.github.com/repos/Noikar/AntiDuneKeyboardDiddler/releases/latest`, pulls `tag_name` out of
+the response with a regex, and compares it against the assembly version — which is why
+`AssemblyInfo.cs` has to be bumped in step with the release tag. `v1.0.2` and `1.0.2-beta1`
+both reduce to `1.0.2`; a tag that does not start with a version number is reported as
+unreadable rather than guessed at.
+
+It downloads nothing and writes nothing. When there is something newer it shows a balloon
+that opens the releases page in the user's browser, and that is the whole of it. The check
+runs on a pool thread, hands its result to the existing UI timer through a field rather than
+marshalling back by hand, and cannot throw: a failure is an ordinary result carrying an error
+string, because being offline is not exceptional. Set `CheckForUpdates = false` and no request
+is made unless the user asks for one from the menu.
+
 ### What it does not do
 
 No injection, no memory access, no messages posted to game windows, no driver, nothing that
@@ -43,8 +80,9 @@ runs inside the game process. Everything is done with documented `user32` input-
 against the rest of the desktop. Dune Awakening runs BattlEye, and this tool stays entirely
 outside its business.
 
-It also does not lock the user to a single layout. It learns which layouts they configured
-from the registry, and they can keep switching between them freely while it runs.
+It also does not lock the user to a single layout unless they ask for it. It learns which
+layouts they configured from the registry, and they can keep switching between them freely
+while it runs. Setting `PreferredLayout` is the opt-in to being held on one.
 
 ## How layouts are identified
 
@@ -96,7 +134,9 @@ Windows settings *while the game is running* would be seen as an intruder and ev
 | `UnloadRetryMilliseconds` | `3000` | Cooldown on removal attempts and on resetting the default language |
 | `SettleMilliseconds` | `2000` | How long to keep restoring the layout after an eviction |
 | `HoldSweepMilliseconds` | `500` | How often to pull drifted windows back while the game runs |
+| `PreferredLayout` | *(empty)* | The layout to hold, as an HKL, a KLID or a name. Empty infers it from the foreground window |
 | `EnforceAlways` | `false` | Guard all the time, not just during the game |
+| `CheckForUpdates` | `true` | Ask GitHub for the latest release tag shortly after startup |
 | `Notify` | `true` | Show a tray balloon when the layout is put back |
 | `Verbose` | `false` | Log every correction |
 
